@@ -119,6 +119,5 @@ with st.expander("Privacy & Behavior"):
 - **In-memory only:** Uploaded files are read directly into memory (`getvalue()`) and never written to disk.
 - **No caching:** The app does not use `st.cache_data` or `st.cache_resource`.
 - **Ephemeral session:** When the page refreshes or the session ends, data in memory is gone.
-- **Public app:** On a free public Streamlit instance, avoid uploading sensitive or regulated data.
         """
     )
