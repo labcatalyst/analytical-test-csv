@@ -14,11 +14,12 @@ st.caption(
     "Upload a raw .csv file, I'll:\n"
     "1) Keep only rows with Sample Type = 'Sample'\n"
     "2) Drop rows where Concentration is null/blank\n"
-    "3) Split into separate CSVs by Sample Name"
+    "3) Remove unwanted metadata columns\n"
+    "4) Split into separate CSVs by Sample Name"
 )
 
 # ----------------------------
-# Sidebar options (privacy-safe)
+# Sidebar
 # ----------------------------
 with st.sidebar:
     st.header("Options")
@@ -27,31 +28,40 @@ with st.sidebar:
     st.write("No files are written to disk. Nothing is cached.")
 
 # ----------------------------
-# File uploader (in-memory)
+# File uploader
 # ----------------------------
 uploaded = st.file_uploader("Step 1 — Upload your raw .csv file", type=["csv"])
 
 # ----------------------------
-# Core transform
+# Core configuration
 # ----------------------------
 SAMPLE_TYPE_COL = "Sample Type"
 CONCENTRATION_COL = "Concentration"
 SAMPLE_NAME_COL = "Sample Name"
 
+DROP_COLUMNS = [
+    "Data File Name",
+    "Misc. Info or Comment",
+    "Batch Name",
+    "Operator",
+    "Instrument Name",
+    "Units",
+]
 
 def transform(df: pd.DataFrame) -> pd.DataFrame:
     """
-    1) Filter on Sample Type == 'Sample'
-    2) Filter on Concentration ≠ null/blank
-    Returns the filtered DataFrame.
+    FILTER STEPS:
+    1) Keep rows where Sample Type == 'Sample'
+    2) Keep rows where Concentration is not blank
+    3) Drop unwanted columns
     """
+
     # Ensure required columns exist
     missing = [c for c in [SAMPLE_TYPE_COL, CONCENTRATION_COL, SAMPLE_NAME_COL] if c not in df.columns]
     if missing:
         raise ValueError(f"Missing required column(s): {', '.join(missing)}")
 
-    # 1. Keep only rows where Sample Type == 'Sample'
-    st.write(f"Unique values in '{SAMPLE_TYPE_COL}' before filtering:", df[SAMPLE_TYPE_COL].unique())
+    # Step 1 — Filter Sample Type
     mask_sample_type = (
         df[SAMPLE_TYPE_COL]
         .astype(str)
@@ -60,18 +70,21 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
     )
     df = df[mask_sample_type]
 
-    # 2. Keep only rows where Concentration is not null/blank
+    # Step 2 — Filter non-blank Concentration
     conc_series = df[CONCENTRATION_COL]
     mask_conc = conc_series.notna() & conc_series.astype(str).str.strip().ne("")
     df = df[mask_conc]
+
+    # Step 3 — Drop listed metadata columns (only those that exist)
+    cols_to_drop = [c for c in DROP_COLUMNS if c in df.columns]
+    df = df.drop(columns=cols_to_drop, errors="ignore")
 
     return df.reset_index(drop=True)
 
 
 def slugify(value: str) -> str:
     """Create a safe filename slug from the Sample Name."""
-    value = str(value)
-    value = value.strip()
+    value = str(value).strip()
     value = value.replace(" ", "_")
     value = re.sub(r"[^0-9A-Za-z_\-]+", "_", value)
     value = re.sub(r"_+", "_", value)
@@ -79,53 +92,54 @@ def slugify(value: str) -> str:
 
 
 # ----------------------------
-# Process & Download (no disk writes)
+# Main processing
 # ----------------------------
 if uploaded is not None:
     try:
         # Read raw bytes (IN MEMORY)
         raw_bytes = uploaded.getvalue()
 
-        # Size guard (in memory)
+        # Size limit
         size_mb = len(raw_bytes) / (1024 * 1024)
         if size_mb > max_mb:
             st.error(f"File is {size_mb:.2f} MB, exceeds the {max_mb} MB limit.")
             st.stop()
 
-        # Parse CSV from memory (no temp files)
+        # Load CSV
         mem_buf = io.BytesIO(raw_bytes)
         df = pd.read_csv(mem_buf, dtype=str, encoding=encoding, engine="python")
 
         st.write(f"Input rows: {len(df)}")
 
-        # Apply filtering steps 1 & 2
+        # Transform steps 1–3
         out_df = transform(df)
 
         if out_df.empty:
-            st.warning("After filtering, no rows remain (no 'Sample' rows with non-blank Concentration).")
+            st.warning("After filtering, no rows remain.")
             st.stop()
 
+        # Preview (updated!)
         st.success(f"Filtered — output rows: {len(out_df)}")
         st.write("Preview of filtered data (first 100 rows):")
         st.dataframe(out_df.head(100), use_container_width=True)
 
         # ----------------------------
-        # Step 3 — Split by Sample Name
+        # Step 4 — Split by Sample Name
         # ----------------------------
         grouped = list(out_df.groupby(SAMPLE_NAME_COL, dropna=False))
         st.write(f"Found {len(grouped)} unique Sample Name value(s).")
 
-        # Optional: combined filtered CSV download
+        # Combined file
         combined_buf = io.StringIO()
         out_df.to_csv(combined_buf, index=False)
         st.download_button(
-            label="⬇ Download single combined filtered CSV",
+            label="⬇ Download combined filtered CSV",
             data=combined_buf.getvalue(),
             file_name="filtered_all_samples.csv",
             mime="text/csv",
         )
 
-        # Build a ZIP with one CSV per Sample Name (in memory)
+        # ZIP of per-sample CSVs
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
             for idx, (sample_name, sub_df) in enumerate(grouped, start=1):
@@ -142,7 +156,7 @@ if uploaded is not None:
             mime="application/zip",
         )
 
-        # Also provide individual download buttons (if you want that UX)
+        # Optional individual downloads
         with st.expander("Individual Sample Name downloads"):
             for idx, (sample_name, sub_df) in enumerate(grouped, start=1):
                 sample_slug = slugify(sample_name)
@@ -156,7 +170,7 @@ if uploaded is not None:
                     key=f"dl_{idx}_{sample_slug}",
                 )
 
-        # Explicit cleanup (defensive)
+        # Cleanup
         del raw_bytes, mem_buf, df, out_df, combined_buf, zip_buf
         gc.collect()
 
@@ -164,13 +178,13 @@ if uploaded is not None:
         st.error(f"Error: {e}")
 
 # ----------------------------
-# Help / Notes
+# Notes
 # ----------------------------
 with st.expander("Privacy & Behavior"):
     st.markdown(
         """
-- **In-memory only:** Uploaded files are read directly into memory (`getvalue()`) and never written to disk.
+- **In-memory only:** Uploaded files are read directly into memory and never written to disk.
 - **No caching:** The app does not use `st.cache_data` or `st.cache_resource`.
-- **Ephemeral session:** When the page refreshes or the session ends, data in memory is gone.
+- **Ephemeral sessions:** Data disappears when the page refreshes.
         """
     )
