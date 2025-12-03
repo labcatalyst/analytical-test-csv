@@ -14,7 +14,7 @@ st.caption(
     "Upload a raw .csv file, I'll:\n"
     "1) Keep only rows with Sample Type = 'Sample'\n"
     "2) Drop rows where Concentration is null/blank\n"
-    "3) Remove unwanted metadata columns\n"
+    "3) Remove metadata columns (including Sample Type)\n"
     "4) Split into separate CSVs by Sample Name"
 )
 
@@ -39,6 +39,7 @@ SAMPLE_TYPE_COL = "Sample Type"
 CONCENTRATION_COL = "Concentration"
 SAMPLE_NAME_COL = "Sample Name"
 
+# Columns removed in step 3
 DROP_COLUMNS = [
     "Data File Name",
     "Misc. Info or Comment",
@@ -46,6 +47,7 @@ DROP_COLUMNS = [
     "Operator",
     "Instrument Name",
     "Units",
+    "Sample Type",        # <-- NEW: Remove Sample Type as part of step 3
 ]
 
 def transform(df: pd.DataFrame) -> pd.DataFrame:
@@ -118,7 +120,7 @@ if uploaded is not None:
             st.warning("After filtering, no rows remain.")
             st.stop()
 
-        # Preview (updated!)
+        # Preview (reflects step 3 removal)
         st.success(f"Filtered — output rows: {len(out_df)}")
         st.write("Preview of filtered data (first 100 rows):")
         st.dataframe(out_df.head(100), use_container_width=True)
@@ -129,7 +131,7 @@ if uploaded is not None:
         grouped = list(out_df.groupby(SAMPLE_NAME_COL, dropna=False))
         st.write(f"Found {len(grouped)} unique Sample Name value(s).")
 
-        # Combined file
+        # Combined CSV
         combined_buf = io.StringIO()
         out_df.to_csv(combined_buf, index=False)
         st.download_button(
