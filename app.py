@@ -14,7 +14,7 @@ st.caption(
     "Upload a raw .csv file, I'll:\n"
     "1) Keep only rows with Sample Type = 'Sample'\n"
     "2) Drop rows where Concentration is null/blank\n"
-    "3) Remove metadata columns (including Sample Type)\n"
+    "3) Remove metadata columns\n"
     "4) Split into separate CSVs by Sample Name"
 )
 
@@ -47,7 +47,8 @@ DROP_COLUMNS = [
     "Operator",
     "Instrument Name",
     "Units",
-    "Sample Type",        # <-- NEW: Remove Sample Type as part of step 3
+    "Sample Type",    
+    "Element Full Name",
 ]
 
 def transform(df: pd.DataFrame) -> pd.DataFrame:
