@@ -1,6 +1,7 @@
 import io
 import gc
 import re
+import csv
 import zipfile
 import pandas as pd
 import streamlit as st
@@ -134,7 +135,7 @@ if uploaded is not None:
 
         # Combined CSV
         combined_buf = io.StringIO()
-        out_df.to_csv(combined_buf, index=False)
+        out_df.to_csv(combined_buf, index=False, quoting=csv.QUOTE_NONNUMERIC)
         st.download_button(
             label="⬇ Download combined filtered CSV",
             data=combined_buf.getvalue(),
@@ -149,7 +150,7 @@ if uploaded is not None:
                 sample_slug = slugify(sample_name)
                 filename = f"{sample_slug}.csv"
                 csv_buf = io.StringIO()
-                sub_df.to_csv(csv_buf, index=False)
+                sub_df.to_csv(csv_buf, index=False, quoting=csv.QUOTE_NONNUMERIC)
                 zf.writestr(filename, csv_buf.getvalue())
 
         st.download_button(
@@ -164,7 +165,7 @@ if uploaded is not None:
             for idx, (sample_name, sub_df) in enumerate(grouped, start=1):
                 sample_slug = slugify(sample_name)
                 csv_buf = io.StringIO()
-                sub_df.to_csv(csv_buf, index=False)
+                sub_df.to_csv(csv_buf, index=False, quoting=csv.QUOTE_NONNUMERIC)
                 st.download_button(
                     label=f"⬇ Download CSV for Sample Name = {sample_name}",
                     data=csv_buf.getvalue(),
