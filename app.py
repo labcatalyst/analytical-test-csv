@@ -52,6 +52,11 @@ DROP_COLUMNS = [
     "Element Full Name",
 ]
 
+# Columns that should always be quoted to force text interpretation in Salesforce
+# (columns that may look like numbers but should be treated as text)
+FORCE_QUOTE_COLUMNS = ["Sample Name"]
+
+
 def transform(df: pd.DataFrame) -> pd.DataFrame:
     """
     FILTER STEPS:
@@ -84,6 +89,44 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
     df = df.drop(columns=cols_to_drop, errors="ignore")
 
     return df.reset_index(drop=True)
+
+
+def df_to_csv_selective_quoting(df: pd.DataFrame, quote_columns: list) -> str:
+    """
+    Convert DataFrame to CSV string with selective quoting.
+    Only columns in quote_columns will be quoted; others remain unquoted.
+    This ensures Salesforce interprets text fields as text and numeric fields as numbers.
+    """
+    output = io.StringIO()
+    
+    # Get column indices that need quoting
+    quote_indices = set()
+    for i, col in enumerate(df.columns):
+        if col in quote_columns:
+            quote_indices.add(i)
+    
+    # Write header (unquoted)
+    output.write(','.join(df.columns) + '\n')
+    
+    # Write data rows with selective quoting
+    for _, row in df.iterrows():
+        values = []
+        for i, val in enumerate(row):
+            str_val = '' if pd.isna(val) else str(val)
+            if i in quote_indices:
+                # Quote this column's value (escape any existing quotes)
+                escaped = str_val.replace('"', '""')
+                values.append(f'"{escaped}"')
+            else:
+                # Check if value needs quoting due to special characters
+                if ',' in str_val or '"' in str_val or '\n' in str_val:
+                    escaped = str_val.replace('"', '""')
+                    values.append(f'"{escaped}"')
+                else:
+                    values.append(str_val)
+        output.write(','.join(values) + '\n')
+    
+    return output.getvalue()
 
 
 def slugify(value: str) -> str:
@@ -133,12 +176,11 @@ if uploaded is not None:
         grouped = list(out_df.groupby(SAMPLE_NAME_COL, dropna=False))
         st.write(f"Found {len(grouped)} unique Sample Name value(s).")
 
-        # Combined CSV
-        combined_buf = io.StringIO()
-        out_df.to_csv(combined_buf, index=False, quoting=csv.QUOTE_NONNUMERIC)
+        # Combined CSV with selective quoting for Salesforce
+        combined_csv = df_to_csv_selective_quoting(out_df, FORCE_QUOTE_COLUMNS)
         st.download_button(
             label="⬇ Download combined filtered CSV",
-            data=combined_buf.getvalue(),
+            data=combined_csv,
             file_name="filtered_all_samples.csv",
             mime="text/csv",
         )
@@ -149,9 +191,8 @@ if uploaded is not None:
             for idx, (sample_name, sub_df) in enumerate(grouped, start=1):
                 sample_slug = slugify(sample_name)
                 filename = f"{sample_slug}.csv"
-                csv_buf = io.StringIO()
-                sub_df.to_csv(csv_buf, index=False, quoting=csv.QUOTE_NONNUMERIC)
-                zf.writestr(filename, csv_buf.getvalue())
+                csv_content = df_to_csv_selective_quoting(sub_df, FORCE_QUOTE_COLUMNS)
+                zf.writestr(filename, csv_content)
 
         st.download_button(
             label="⬇ Download all Sample Name CSVs as ZIP",
@@ -164,18 +205,17 @@ if uploaded is not None:
         with st.expander("Individual Sample Name downloads"):
             for idx, (sample_name, sub_df) in enumerate(grouped, start=1):
                 sample_slug = slugify(sample_name)
-                csv_buf = io.StringIO()
-                sub_df.to_csv(csv_buf, index=False, quoting=csv.QUOTE_NONNUMERIC)
+                csv_content = df_to_csv_selective_quoting(sub_df, FORCE_QUOTE_COLUMNS)
                 st.download_button(
                     label=f"⬇ Download CSV for Sample Name = {sample_name}",
-                    data=csv_buf.getvalue(),
+                    data=csv_content,
                     file_name=f"{sample_slug}.csv",
                     mime="text/csv",
                     key=f"dl_{idx}_{sample_slug}",
                 )
 
         # Cleanup
-        del raw_bytes, mem_buf, df, out_df, combined_buf, zip_buf
+        del raw_bytes, mem_buf, df, out_df, combined_csv, zip_buf
         gc.collect()
 
     except Exception as e:
