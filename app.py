@@ -12,7 +12,7 @@ st.set_page_config(page_title="CSV Sample Splitter", page_icon="🧪", layout="c
 st.title("🧪 CSV Sample Splitter")
 st.caption(
     "Upload a raw .csv file, I'll:\n"
-    "1) Keep only rows with Sample Type = 'Sample'\n"
+    "1) Keep only rows with Sample Type = 'Sample' or 'SpikeRef'\n"
     "2) Drop rows where Concentration is null/blank\n"
     "3) Remove metadata columns\n"
     "4) Split into separate CSVs by Sample Name"
@@ -55,7 +55,7 @@ DROP_COLUMNS = [
 def transform(df: pd.DataFrame) -> pd.DataFrame:
     """
     FILTER STEPS:
-    1) Keep rows where Sample Type == 'Sample'
+    1) Keep rows where Sample Type == 'Sample' or 'SpikeRef'
     2) Keep rows where Concentration is not blank
     3) Drop unwanted columns
     """
@@ -70,7 +70,7 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         df[SAMPLE_TYPE_COL]
         .astype(str)
         .str.strip()
-        .eq("Sample")
+        .isin(["Sample", "SpikeRef"])
     )
     df = df[mask_sample_type]
 
